@@ -1,0 +1,10 @@
+node_modules/
+bin/
+dist/
+connection.json
+connection.json.*
+policy.json
+*.log
+current-frame.*
+.env*
+!*.example

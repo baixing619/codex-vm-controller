@@ -1,0 +1,66 @@
+name: Validate build and package
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  javascript:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm test
+  windows:
+    needs: javascript
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify configuration preserves existing data
+        shell: powershell
+        run: ./test/configure.test.ps1
+      - name: Build and test from a Unicode path with spaces
+        shell: powershell
+        run: |
+          $buildRoot=Join-Path $env:RUNNER_TEMP '虚拟机 构建'
+          New-Item -ItemType Directory -Path $buildRoot | Out-Null
+          Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Force | Where-Object {$_.Name -ne '.git'} | Copy-Item -Destination $buildRoot -Recurse -Force
+          & (Join-Path $buildRoot 'native/build.ps1') -RunTests
+          if ($LASTEXITCODE -ne 0) { throw 'Native build/tests failed' }
+          Copy-Item -LiteralPath (Join-Path $buildRoot 'bin') -Destination $env:GITHUB_WORKSPACE -Recurse -Force
+      - run: npm run package
+      - name: Verify the extracted release package
+        shell: powershell
+        run: ./tools/verify-package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-vm-controller-windows-x64
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        name: Publish validated version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $version=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag='v'+$version
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Output 'Release exists; preserving its original assets.'; exit 0 }
+          gh release create $tag dist/*.zip dist/SHA256SUMS.txt --target "${{ github.sha }}" --title "$tag - Codex VM controller skill and service" --notes "Windows x64 package: skill, service, native controller and bundled Node.js 24. Full source and tests are in the repository. Cloud build, protocol and extracted-package checks passed; real Hyper-V input on another machine remains unverified."
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

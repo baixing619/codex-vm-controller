@@ -1,0 +1,16 @@
+{
+  "name": "codex-vm-controller",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test --test-isolation=none test/*.test.mjs",
+    "build:native": "powershell.exe -NoProfile -File native/build.ps1 -RunTests",
+    "package": "node tools/package.mjs"
+  }
+}
